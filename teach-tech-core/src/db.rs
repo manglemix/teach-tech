@@ -2,7 +2,7 @@ use std::sync::OnceLock;
 
 use anyhow::Context;
 use sea_orm::{Database, DatabaseConnection};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 
 static MAIN_DB: OnceLock<DatabaseConnection> = OnceLock::new();
 
@@ -12,7 +12,7 @@ pub fn get_db() -> &'static DatabaseConnection {
         .expect("Database was not initialized. Call init_db first")
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize)]
 struct DBConfig {
     pub database_url: String,
 }

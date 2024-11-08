@@ -7,13 +7,17 @@ use std::{
 
 use anyhow::Context;
 use axum::Router;
+use clap::{Parser, Subcommand};
 use db::init_db;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use tracing::error;
+use users::admins::create_admin;
 
 pub mod db;
+pub mod users;
+pub mod auth;
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct ApiConfig {
     #[serde(default = "default_server_address")]
     pub server_address: SocketAddr,
@@ -32,7 +36,7 @@ impl<S> TeachCore<S> {
     pub fn get_config_str(&self) -> &str {
         &self.config
     }
-
+    
     pub fn modify_router<T>(self, f: impl FnOnce(Router<S>) -> Router<T>) -> TeachCore<T> {
         TeachCore {
             router: f(self.router),
@@ -43,8 +47,6 @@ impl<S> TeachCore<S> {
 
 impl TeachCore<()> {
     pub async fn serve(self) -> anyhow::Result<ExitCode> {
-        init_db(self.get_config_str()).await?;
-
         let api_config: ApiConfig =
             toml::from_str(self.get_config_str()).context("Parsing teach-config.toml")?;
 
@@ -52,11 +54,13 @@ impl TeachCore<()> {
             .await
             .with_context(|| format!("Binding to {}", api_config.server_address))?;
         
+        let core = auth::add_to_core(self).await?;
+        
         let service = tokio::spawn(
             async move {
                 axum::serve(
                     listener,
-                    self.router
+                    core.router
                         .into_make_service_with_connect_info::<SocketAddr>(),
                 )
                 .await
@@ -71,7 +75,7 @@ impl TeachCore<()> {
             }
             _ = async {
                 if let Err(e) = tokio::signal::ctrl_c().await {
-                    error!("Failed to listen for ctrl-c; Service must be shut down manually: {e}");
+                    error!("Failed to listen for ctrl-c; Service must be shut down manually: {e:#}");
                     std::future::pending().await
                 }
             } => {
@@ -81,24 +85,45 @@ impl TeachCore<()> {
     }
 }
 
+#[derive(Subcommand)]
+pub enum Command {
+    CreateAdmin {
+        username: String,
+    },
+    Run
+}
+
+#[derive(Parser)]
+pub struct Cli {
+    #[command(subcommand)]
+    command: Command,
+}
+
 #[tokio::main]
 pub async fn init_core<F, Fut>(f: F) -> anyhow::Result<ExitCode>
 where
     F: FnOnce(TeachCore) -> Fut,
     Fut: Future<Output = anyhow::Result<ExitCode>>,
 {
+    let Cli { command } = Cli::parse();
+    tracing_subscriber::fmt().init();
+    let config =
+        std::fs::read_to_string("teach-config.toml").context("Reading teach-config.toml")?;
+    init_db(&config).await?;
+    match command {
+        Command::CreateAdmin { username } => {
+            return create_admin(username).await.map(|()| ExitCode::SUCCESS);
+        }
+        Command::Run => {}
+    }
+
     if !Path::new("teach-config.toml").exists() {
         return Err(anyhow::anyhow!("teach-config.toml does not exist"));
     }
-    let config =
-        std::fs::read_to_string("teach-config.toml").context("Reading teach-config.toml")?;
-    // Check if the config is valid
-    toml::from_str::<toml::Value>(&config).context("Validating teach-config.toml")?;
     let core = TeachCore {
         router: Router::new(),
         config,
     };
-    tracing_subscriber::fmt().init();
     f(core).await
 }
 

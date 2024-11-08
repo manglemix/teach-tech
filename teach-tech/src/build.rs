@@ -147,7 +147,7 @@ pub fn build_at_path(path: &Path) -> anyhow::Result<ExitCode> {
         writeln!(file, "\tinit_core(|core| async move {{")?;
 
         for (name, _) in &integrations {
-            writeln!(file, "let core = {name}::add_to_core(core);")?;
+            writeln!(file, "\t\tlet core = {name}::add_to_core(core).await?;")?;
         }
 
         writeln!(file, "\t\tcore.serve().await")?;
