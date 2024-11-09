@@ -19,3 +19,4 @@ unfmt = "0.2.2"
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 rand = "0.8.5"
 crossbeam = "0.8.4"
+zeroize = { version = "1.8.1", features = ["serde"] }

@@ -2,7 +2,9 @@ use argon2::{
     password_hash::{self, rand_core::OsRng, PasswordHasher, SaltString},
     Argon2, PasswordHash, PasswordVerifier,
 };
+use rand::distributions::{Alphanumeric, DistString};
 use sea_orm::{entity::prelude::*, ActiveValue};
+use zeroize::Zeroizing;
 
 use super::UserID;
 
@@ -30,6 +32,21 @@ impl Model {
                 "Validating password for {}: {e:#}",
                 self.user_id
             )),
+        }
+    }
+}
+
+pub async fn new_rand(conn: &impl ConnectionTrait) -> Result<(Model, Zeroizing<String>), DbErr> {
+    let mut user_id;
+    let mut password = Zeroizing::new(String::new());
+    loop {
+        user_id = UserID::rand();
+        password.clear();
+        Alphanumeric.append_string(&mut OsRng, &mut password, 18);
+        match new_from_password(user_id, &password).await.expect("Hashing admin password").insert(conn).await {
+            Ok(m) => break Ok((m, password)),
+            Err(DbErr::RecordNotInserted) => continue,
+            Err(e) => return Err(e),
         }
     }
 }

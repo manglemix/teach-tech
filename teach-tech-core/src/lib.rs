@@ -58,7 +58,8 @@ impl TeachCore<()> {
             .with_context(|| format!("Binding to {}", api_config.server_address))?;
 
         let core = auth::add_to_core(self).await;
-        let core = users::admins::add_to_core(core).await;
+        let core = users::admins::add_to_core(core);
+        let core = users::students::add_to_core(core);
 
         let cors = cors::CorsLayer::new().allow_methods(cors::Any);
 
