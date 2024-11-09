@@ -8,5 +8,7 @@ export const load: LayoutServerLoad = ({ cookies, params, url }) => {
 		const role = segments[2];
 		redirect(307, `/${params.institution}/${role}/login`);
 	}
-	return {};
+	return {
+		bearerToken
+	};
 };
