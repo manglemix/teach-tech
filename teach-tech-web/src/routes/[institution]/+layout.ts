@@ -8,7 +8,6 @@ export const load: LayoutLoad = ({ params }) => {
 	}
 	const host = institutions[params.institution].url;
 	return {
-		institution: params.institution,
 		host
 	};
 };

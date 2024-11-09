@@ -49,6 +49,14 @@ impl Model {
             last_used: ActiveValue::set(chrono::Utc::now().naive_utc())
         })
     }
+
+    pub async fn update_last_used(self, db: &impl ConnectionTrait) -> Result<(), DbErr> {
+        ActiveModel {
+            user_id: ActiveValue::not_set(),
+            token: ActiveValue::unchanged(self.token),
+            last_used: ActiveValue::set(chrono::Utc::now().naive_utc())
+        }.update(db).await.map(|_| ())
+    }
 }
 
 pub async fn validate_token(token: &str) -> anyhow::Result<Option<UserID>> {

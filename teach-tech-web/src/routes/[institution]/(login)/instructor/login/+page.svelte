@@ -8,10 +8,10 @@
 	let { data }: { data: PageData } = $props();
 </script>
 
-<div class="flex h-screen w-screen flex-col items-center justify-center">
+<div class="flex w-screen flex-col items-center justify-center" id="center">
 	<form
 		class="flex max-w-md flex-col justify-center"
-		onsubmit={(event) => onSubmitForLogin(event, user_id, password, data, $page.url.href)}
+		onsubmit={(event) => onSubmitForLogin(event, user_id, password, data.host, $page.params.institution, $page.url.href)}
 	>
 		<label for="username" class="mt-4">User ID</label>
 		<input bind:value={user_id} type="text" id="user_id" name="user_id" required />
@@ -22,3 +22,9 @@
 		<button type="submit" class="mt-4 rounded bg-blue-500 p-2 text-white">Login</button>
 	</form>
 </div>
+
+<style>
+	#center {
+		height: calc(100vh - 5rem);
+	}
+</style>

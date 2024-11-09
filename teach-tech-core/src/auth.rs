@@ -77,8 +77,8 @@ pub struct Token {
     pub expires_at: DateTime,
 }
 
-pub async fn add_to_core<S: Clone + Send + Sync + 'static>(core: TeachCore<S>) -> anyhow::Result<TeachCore<S>> {
-    Ok(core.modify_router(|router| {
+pub async fn add_to_core<S: Clone + Send + Sync + 'static>(core: TeachCore<S>) -> TeachCore<S> {
+    core.modify_router(|router| {
         router.route("/auth/login", post(|Form(LoginForm { user_id, password }): Form<LoginForm>| async move {
             let auth_data = match user_auth::Entity::find_by_id(user_id).one(get_db()).await {
                 Ok(Some(auth_data)) => auth_data,
@@ -116,5 +116,5 @@ pub async fn add_to_core<S: Clone + Send + Sync + 'static>(core: TeachCore<S>) -
                 }
             }
         }))
-    }))
+    })
 }

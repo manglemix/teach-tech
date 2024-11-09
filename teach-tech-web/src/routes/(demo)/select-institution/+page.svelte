@@ -1,7 +1,8 @@
 <script>
+	import { page } from '$app/stores';
 	import { institutions } from '$lib';
 
-	let institution = $state('');
+	let institution = $state($page.url.searchParams.get('inst') || '');
 </script>
 
 <div id="v-fill" class="flex flex-col items-center">

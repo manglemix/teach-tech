@@ -57,13 +57,14 @@ impl TeachCore<()> {
             .await
             .with_context(|| format!("Binding to {}", api_config.server_address))?;
         
-        let core = auth::add_to_core(self).await?;
+        let core = auth::add_to_core(self).await;
+        let core = users::admins::add_to_core(core).await;
 
         let cors = cors::CorsLayer::new()
             .allow_methods(cors::Any);
 
         #[cfg(debug_assertions)]
-        let cors = cors.allow_origin(cors::Any);
+        let cors = cors.allow_origin(cors::Any).allow_headers(cors::Any);
         
         let service = tokio::spawn(
             async move {
