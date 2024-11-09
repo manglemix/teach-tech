@@ -1,45 +1,48 @@
-[tasks.build_lunasim]
+[tasks.create-build]
 workspace = false
 command = "cargo"
-args = ["build", "-p", "lunasim-lib"]
+cwd = "test-ws"
+args = ["run", "-p", "teach-tech", "--", "build"]
 
-[tasks.build_lunabase]
+[tasks.tidb-playground]
 workspace = false
-command = "cargo"
-args = ["build", "-p", "lunabase-lib"]
+command = "tiup"
+args = ["playground"]
 
-[tasks.godot]
-workspace = false
-dependencies = [
-    "build_lunabase",
-    "build_lunasim"
-]
-
-[tasks.sim]
-workspace = false
-command = "cargo"
-args = ["run", "-p", "lunabot", "--", "sim"]
-
-[tasks.main]
-workspace = false
-command = "cargo"
-args = ["run", "-p", "lunabot", "--", "main"]
-
-[tasks.del-cabinet]
-workspace = false
-command = "cargo"
-args = ["run", "-p", "urobotics-tool", "--", "delete-cabinet"]
-
-[tasks.mouser-web]
+[tasks.run-website]
 workspace = false
 command = "npm"
-cwd = "mouser/mouser-web"
-args = ["run", "build"]
+cwd = "teach-tech-web"
+args = ["run", "dev"]
 
-[tasks.mouser-host]
+[tasks.run-api]
+dependencies = ["create-build"]
 workspace = false
 command = "cargo"
-dependencies = [
-    "mouser-web",
-]
-args = ["run", "-p", "mouser-host"]
+cwd = "test-ws/teach-tech-built"
+args = ["run", "--", "run"]
+
+[tasks.reset-db]
+dependencies = ["create-build"]
+workspace = false
+command = "cargo"
+cwd = "test-ws/teach-tech-built"
+args = ["run", "--", "reset-db"]
+
+[tasks.playground]
+workspace = false
+run_task = { name = ["reset-db", "tidb-playground", "run-website"], fork = true, parallel = true }
+
+[tasks.format-rust]
+command = "cargo"
+args = ["fmt"]
+
+[tasks.format-web]
+workspace = false
+command = "npm"
+cwd = "teach-tech-web"
+args = ["run", "format"]
+
+[tasks.format-all]
+workspace = false
+run_task = { name = ["format-rust", "format-web"]}

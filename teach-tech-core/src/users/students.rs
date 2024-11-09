@@ -2,7 +2,6 @@ use sea_orm::entity::prelude::*;
 
 use crate::auth::UserID;
 
-
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
 #[sea_orm(table_name = "students")]
 pub struct Model {

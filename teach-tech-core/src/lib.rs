@@ -16,9 +16,9 @@ use tracing::error;
 use tracing_subscriber::EnvFilter;
 use users::admins::create_admin;
 
+pub mod auth;
 pub mod db;
 pub mod users;
-pub mod auth;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct ApiConfig {
@@ -39,7 +39,7 @@ impl<S> TeachCore<S> {
     pub fn get_config_str(&self) -> &str {
         &self.config
     }
-    
+
     pub fn modify_router<T>(self, f: impl FnOnce(Router<S>) -> Router<T>) -> TeachCore<T> {
         TeachCore {
             router: f(self.router),
@@ -56,32 +56,29 @@ impl TeachCore<()> {
         let listener = tokio::net::TcpListener::bind(api_config.server_address)
             .await
             .with_context(|| format!("Binding to {}", api_config.server_address))?;
-        
+
         let core = auth::add_to_core(self).await;
         let core = users::admins::add_to_core(core).await;
 
-        let cors = cors::CorsLayer::new()
-            .allow_methods(cors::Any);
+        let cors = cors::CorsLayer::new().allow_methods(cors::Any);
 
         #[cfg(debug_assertions)]
         let cors = cors.allow_origin(cors::Any).allow_headers(cors::Any);
-        
-        let service = tokio::spawn(
-            async move {
-                axum::serve(
-                    listener,
-                    core.router
-                        .layer(cors)
-                        .layer(trace::TraceLayer::new_for_http())
-                        .layer(compression::CompressionLayer::new())
-                        .layer(decompression::DecompressionLayer::new())
-                        .into_make_service_with_connect_info::<SocketAddr>(),
-                )
-                .await
-                .context("Serving API")
-            }
-        );
-        
+
+        let service = tokio::spawn(async move {
+            axum::serve(
+                listener,
+                core.router
+                    .layer(cors)
+                    .layer(trace::TraceLayer::new_for_http())
+                    .layer(compression::CompressionLayer::new())
+                    .layer(decompression::DecompressionLayer::new())
+                    .into_make_service_with_connect_info::<SocketAddr>(),
+            )
+            .await
+            .context("Serving API")
+        });
+
         tokio::select! {
             result = service => {
                 result.context("Panicked within API service")??;
@@ -101,10 +98,9 @@ impl TeachCore<()> {
 
 #[derive(Subcommand)]
 pub enum Command {
-    CreateAdmin {
-        username: String,
-    },
-    Run
+    CreateAdmin { username: String },
+    Run,
+    ResetDB
 }
 
 #[derive(Parser)]
@@ -125,13 +121,18 @@ where
     }
     let config =
         std::fs::read_to_string("teach-config.toml").context("Reading teach-config.toml")?;
-    tracing_subscriber::fmt().with_env_filter(EnvFilter::from_env("LOG_LEVEL")).init();
+    tracing_subscriber::fmt()
+        .with_env_filter(EnvFilter::from_env("LOG_LEVEL"))
+        .init();
     init_db(&config).await?;
     match command {
         Command::CreateAdmin { username } => {
             return create_admin(username).await.map(|()| ExitCode::SUCCESS);
         }
         Command::Run => {}
+        Command::ResetDB => {
+            return db::reset_db(&config).await.map(|()| ExitCode::SUCCESS);
+        }
     }
 
     let core = TeachCore {

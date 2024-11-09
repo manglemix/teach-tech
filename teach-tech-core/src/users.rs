@@ -1,2 +1,2 @@
-pub mod students;
 pub mod admins;
+pub mod students;

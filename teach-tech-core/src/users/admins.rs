@@ -1,15 +1,24 @@
 use anyhow::Context;
-use axum::{response::IntoResponse, routing::get, Json};
-use axum_extra::{headers::{authorization::Bearer, Authorization}, TypedHeader};
-use notifications::Notification;
-use rand::{distributions::{Alphanumeric, DistString}, rngs::OsRng};
-use sea_orm::{entity::prelude::*, ActiveValue, TransactionTrait};
 use axum::http::StatusCode;
+use axum::{response::IntoResponse, routing::get, Json};
+use axum_extra::{
+    headers::{authorization::Bearer, Authorization},
+    TypedHeader,
+};
+use notifications::Notification;
+use rand::{
+    distributions::{Alphanumeric, DistString},
+    rngs::OsRng,
+};
+use sea_orm::{entity::prelude::*, ActiveValue, TransactionTrait};
 use serde::Serialize;
 use tracing::error;
 
-use crate::{auth::{token, user_auth, UserID}, db::get_db, users, TeachCore};
-
+use crate::{
+    auth::{token, user_auth, UserID},
+    db::get_db,
+    users, TeachCore,
+};
 
 #[derive(Clone, Debug, DeriveEntityModel)]
 #[sea_orm(table_name = "admins")]
@@ -130,9 +139,9 @@ pub mod notifications {
         pub severity: String,
         pub message: String,
     }
-    
+
     #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
     pub enum Relation {}
-    
+
     impl ActiveModelBehavior for ActiveModel {}
 }
