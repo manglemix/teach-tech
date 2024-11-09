@@ -14,7 +14,7 @@ export async function onSubmitForLogin(
 	password: string,
 	host: string,
 	institution: string,
-	href: string
+	url: URL
 ) {
 	event.preventDefault();
 
@@ -33,14 +33,16 @@ export async function onSubmitForLogin(
 	});
 
 	if (resp.ok) {
-		await fetch(href, {
+		await fetch(url.href, {
 			method: 'POST',
 			headers: {
 				'Content-Type': 'multipart/form-data'
 			},
 			body: await resp.text()
 		});
-		goto(`/${institution}/admin`);
+		const segments = url.pathname.split('/');
+		const role = segments[2];
+		goto(`/${institution}/${role}`);
 	} else {
 		alert('Failed to login');
 	}

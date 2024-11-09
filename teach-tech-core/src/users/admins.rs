@@ -71,8 +71,7 @@ pub fn add_to_core<S: Clone + Send + Sync + 'static>(core: TeachCore<S>) -> Teac
             let model = match Entity::find_by_id(token.user_id).one(get_db()).await {
                 Ok(Some(m)) => m,
                 Ok(None) => {
-                    error!("User id {} not found in admins table, but bearer token was valid", token.user_id);
-                    return (StatusCode::UNAUTHORIZED, ()).into_response();
+                    return (StatusCode::FORBIDDEN, ()).into_response();
                 }
                 Err(e) => {
                     error!("Error reading admin data: {e:#}");

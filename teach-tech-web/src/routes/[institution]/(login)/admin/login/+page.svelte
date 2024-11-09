@@ -18,7 +18,7 @@
 				password,
 				data.host,
 				$page.params.institution,
-				$page.url.href
+				$page.url
 			)}
 	>
 		<label for="username" class="mt-4">User ID</label>

@@ -16,7 +16,7 @@ pub struct Model {
     pub user_id: UserID,
     pub name: String,
     pub pronouns: String,
-    pub birthday: DateTime,
+    pub birthdate: DateTime,
     pub created_at: DateTime,
     #[serde(skip_serializing)]
     pub created_by: UserID,
@@ -30,7 +30,7 @@ impl ActiveModelBehavior for ActiveModel {}
 #[derive(Debug, Deserialize)]
 pub struct CreateStudent {
     pub name: String,
-    pub birthday: chrono::DateTime<chrono::Utc>,
+    pub birthdate: chrono::DateTime<chrono::Utc>,
     pub pronouns: String
 }
 
@@ -70,7 +70,6 @@ pub fn add_to_core<S: Clone + Send + Sync + 'static>(core: TeachCore<S>) -> Teac
             let model = match Entity::find_by_id(token.user_id).one(get_db()).await {
                 Ok(Some(m)) => m,
                 Ok(None) => {
-                    error!("User id {} not found in students table, but bearer token was valid", token.user_id);
                     return (StatusCode::FORBIDDEN, ()).into_response();
                 }
                 Err(e) => {
@@ -123,7 +122,7 @@ pub fn add_to_core<S: Clone + Send + Sync + 'static>(core: TeachCore<S>) -> Teac
                             user_id: ActiveValue::Set(student_auth.user_id),
                             name: ActiveValue::Set(student.name),
                             pronouns: ActiveValue::Set(student.pronouns),
-                            birthday: ActiveValue::Set(student.birthday.naive_utc()),
+                            birthdate: ActiveValue::Set(student.birthdate.naive_utc()),
                             created_at: ActiveValue::Set(created_at),
                             created_by: ActiveValue::Set(user_id),
                         }.insert(txn).await?;

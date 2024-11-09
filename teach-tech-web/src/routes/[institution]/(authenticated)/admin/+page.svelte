@@ -5,7 +5,7 @@
 	import { DateInput } from 'date-picker-svelte'
 
 	let { data }: { data: PageData } = $props();
-	let studentsToCreate: { name: string, birthday: Date, pronouns: string }[] = $state([]);
+	let studentsToCreate: { name: string, birthdate: Date, pronouns: string }[] = $state([]);
 	let createdStudents: { user_id: string, password: string }[] = $state([]);
 	let processing = $state(false);
 	let studentName = $state('');
@@ -65,13 +65,13 @@
 				alert('Please fill out all fields');
 				return;
 			}
-			studentsToCreate.push({ name: studentName, birthday: studentBirthday, pronouns: studentPronouns });
+			studentsToCreate.push({ name: studentName, birthdate: studentBirthday, pronouns: studentPronouns });
 			studentName = '';
 			studentBirthday = new Date();
 			studentPronouns = '';
 		}}>Add Student</button>
 		{#each studentsToCreate as createStudent}
-			<p>{createStudent.name} ({createStudent.pronouns}): {createStudent.birthday.toDateString()}</p>
+			<p>{createStudent.name} ({createStudent.pronouns}): {createStudent.birthdate.toDateString()}</p>
 		{/each}
 
 		{#if processing}

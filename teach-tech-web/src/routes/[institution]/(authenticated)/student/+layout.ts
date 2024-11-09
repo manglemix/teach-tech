@@ -5,7 +5,7 @@ import { redirect } from '@sveltejs/kit';
 export const load: LayoutLoad = async ({ params, fetch, data }) => {
 	const host = institutions[params.institution].url;
 
-	const resp = await fetch(`${host}/admin/home`, {
+	const resp = await fetch(`${host}/student/home`, {
 		headers: {
 			Authorization: `Bearer ${data.bearerToken}`
 		}
@@ -13,7 +13,7 @@ export const load: LayoutLoad = async ({ params, fetch, data }) => {
 
 	if (!resp.ok) {
 		if (resp.status === 401) {
-			redirect(307, `/${params.institution}/admin/invalidate`);
+			redirect(307, `/${params.institution}/student/invalidate`);
 		}
 		if (resp.status === 403) {
 			redirect(307, `/select-institution?inst=${params.institution}`);
@@ -23,14 +23,18 @@ export const load: LayoutLoad = async ({ params, fetch, data }) => {
 
 	const respData: {
 		user_id: string;
-		username: string;
-		admin_notifications: { msg: string; severity: string }[];
+		name: string;
+		pronouns: string;
+		birthdate: Date;
+		created_at: Date;
 	} = await resp.json();
 
 	return {
 		userId: respData.user_id,
-		username: respData.username,
-		adminNotifications: respData.admin_notifications,
+		name: respData.name,
+		pronouns: respData.pronouns,
+		birthdate: respData.birthdate,
+		createdAt: respData.created_at,
 		bearerToken: data.bearerToken
 	};
 };
