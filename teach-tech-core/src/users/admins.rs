@@ -1,5 +1,5 @@
 use anyhow::Context;
-use rand::{distributions::{DistString, Standard}, rngs::OsRng};
+use rand::{distributions::{Alphanumeric, DistString}, rngs::OsRng};
 use sea_orm::{entity::prelude::*, ActiveValue, TransactionTrait};
 
 use crate::{auth::{token, user_auth, UserID}, db::get_db, users};
@@ -27,7 +27,7 @@ pub async fn create_admin(username: String) -> anyhow::Result<()> {
             loop {
                 user_id = UserID::rand();
                 password.clear();
-                Standard.append_string(&mut OsRng, &mut password, 18);
+                Alphanumeric.append_string(&mut OsRng, &mut password, 18);
                 match user_auth::new_from_password(user_id, &password).await.expect("Hashing admin password").insert(txn).await {
                     Ok(_) => break,
                     Err(DbErr::RecordNotInserted) => continue,

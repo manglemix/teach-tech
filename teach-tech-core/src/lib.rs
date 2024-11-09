@@ -1,3 +1,4 @@
+#![feature(duration_constructors)]
 use std::{
     future::Future,
     net::{IpAddr, Ipv4Addr, SocketAddr},
@@ -10,7 +11,9 @@ use axum::Router;
 use clap::{Parser, Subcommand};
 use db::init_db;
 use serde::Deserialize;
+use tower_http::{compression, cors, decompression, trace};
 use tracing::error;
+use tracing_subscriber::EnvFilter;
 use users::admins::create_admin;
 
 pub mod db;
@@ -55,12 +58,22 @@ impl TeachCore<()> {
             .with_context(|| format!("Binding to {}", api_config.server_address))?;
         
         let core = auth::add_to_core(self).await?;
+
+        let cors = cors::CorsLayer::new()
+            .allow_methods(cors::Any);
+
+        #[cfg(debug_assertions)]
+        let cors = cors.allow_origin(cors::Any);
         
         let service = tokio::spawn(
             async move {
                 axum::serve(
                     listener,
                     core.router
+                        .layer(cors)
+                        .layer(trace::TraceLayer::new_for_http())
+                        .layer(compression::CompressionLayer::new())
+                        .layer(decompression::DecompressionLayer::new())
                         .into_make_service_with_connect_info::<SocketAddr>(),
                 )
                 .await
@@ -106,9 +119,12 @@ where
     Fut: Future<Output = anyhow::Result<ExitCode>>,
 {
     let Cli { command } = Cli::parse();
-    tracing_subscriber::fmt().init();
+    if !Path::new("teach-config.toml").exists() {
+        return Err(anyhow::anyhow!("teach-config.toml does not exist"));
+    }
     let config =
         std::fs::read_to_string("teach-config.toml").context("Reading teach-config.toml")?;
+    tracing_subscriber::fmt().with_env_filter(EnvFilter::from_env("LOG_LEVEL")).init();
     init_db(&config).await?;
     match command {
         Command::CreateAdmin { username } => {
@@ -117,9 +133,6 @@ where
         Command::Run => {}
     }
 
-    if !Path::new("teach-config.toml").exists() {
-        return Err(anyhow::anyhow!("teach-config.toml does not exist"));
-    }
     let core = TeachCore {
         router: Router::new(),
         config,

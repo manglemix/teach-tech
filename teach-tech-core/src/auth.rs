@@ -66,19 +66,15 @@ impl std::fmt::Display for UserID {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct NewUserForm {
+pub struct LoginForm {
+    pub user_id: UserID,
     pub password: String,
 }
 
 #[derive(Debug, Serialize)]
-pub struct NewUserResult {
+pub struct Token {
     pub token: String,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct LoginForm {
-    pub user_id: UserID,
-    pub password: String,
+    pub expires_at: DateTime,
 }
 
 pub async fn add_to_core<S: Clone + Send + Sync + 'static>(core: TeachCore<S>) -> anyhow::Result<TeachCore<S>> {
@@ -86,7 +82,7 @@ pub async fn add_to_core<S: Clone + Send + Sync + 'static>(core: TeachCore<S>) -
         router.route("/auth/login", post(|Form(LoginForm { user_id, password }): Form<LoginForm>| async move {
             let auth_data = match user_auth::Entity::find_by_id(user_id).one(get_db()).await {
                 Ok(Some(auth_data)) => auth_data,
-                Ok(None) => return (StatusCode::NOT_FOUND, ()).into_response(),
+                Ok(None) => return (StatusCode::UNAUTHORIZED, ()).into_response(),
                 Err(e) => {
                     error!("Error getting user auth data for {user_id}: {e:#}");
                     return (StatusCode::INTERNAL_SERVER_ERROR, ()).into_response();
@@ -108,7 +104,11 @@ pub async fn add_to_core<S: Clone + Send + Sync + 'static>(core: TeachCore<S>) -
 
             match result {
                 Ok(Ok(token)) => {
-                    (StatusCode::OK, Json(NewUserResult { token: token.token })).into_response()
+                    let expiry = chrono::Utc::now().naive_utc() + token::get_token_validity_duration_std();
+                    (StatusCode::OK, Json(Token {
+                        token: token.token,
+                        expires_at: expiry
+                    })).into_response()
                 },
                 Ok(Err(e)) | Err(e) => {
                     error!("Error creating token for {user_id}: {e:#}");

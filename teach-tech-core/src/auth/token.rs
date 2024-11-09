@@ -8,7 +8,15 @@ use crate::db::get_db;
 use super::UserID;
 
 
-static VALIDITY_DURATION: AtomicCell<chrono::Duration> = AtomicCell::new(chrono::Duration::days(3));
+static VALIDITY_DURATION: AtomicCell<std::time::Duration> = AtomicCell::new(std::time::Duration::from_days(3));
+
+pub fn get_token_validity_duration() -> chrono::Duration {
+    chrono::Duration::from_std(VALIDITY_DURATION.load()).unwrap()
+}
+
+pub fn get_token_validity_duration_std() -> std::time::Duration {
+    VALIDITY_DURATION.load()
+}
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
 #[sea_orm(table_name = "user_auth_tokens")]
@@ -50,7 +58,7 @@ pub async fn validate_token(token: &str) -> anyhow::Result<Option<UserID>> {
     
     let now = chrono::Utc::now().naive_utc();
     let elapsed = now - model.last_used;
-    if elapsed > VALIDITY_DURATION.load() {
+    if elapsed > get_token_validity_duration() {
         let user_id = model.user_id;
         model.delete(get_db()).await.with_context(|| format!("Deleting expired token for {user_id}"))?;
         return Ok(None);

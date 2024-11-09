@@ -31,10 +31,10 @@ impl Model {
     }
 }
 
-pub async fn new_from_password(user_id: UserID, password: &str) -> anyhow::Result<ActiveModel> {
+pub async fn new_from_password(user_id: UserID, password: &str) -> password_hash::Result<ActiveModel> {
     let salt = SaltString::generate(&mut OsRng);
     let argon2 = Argon2::default();
-    let hash = argon2.hash_password(password.as_bytes(), &salt).map_err(|e| anyhow::anyhow!("Hashing password for {user_id}: {e:#}"))?;
+    let hash = argon2.hash_password(password.as_bytes(), &salt)?;
     let password_hash = hash.to_string();
     
     Ok(ActiveModel {
