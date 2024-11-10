@@ -40,12 +40,12 @@
 			} else if (resp.status === 401) {
 				const segments = $page.url.pathname.split('/');
 				const role = segments[2];
-				goto(`${$page.params.institution}/${role}/invalidate`);
+				goto(`${$page.params.institution}/${role}/logout`);
 			} else if (resp.status === 403) {
 				alert('Your permissions may have changed');
 				const segments = $page.url.pathname.split('/');
 				const role = segments[2];
-				goto(`${$page.params.institution}/${role}/invalidate`);
+				goto(`${$page.params.institution}/${role}/logout`);
 			} else {
 				alert('Failed to create students');
 			}

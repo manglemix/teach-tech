@@ -206,13 +206,6 @@ mod hot_reload {
                         UPDATED_NOTIFY.notified().await;
                     }
                 }
-                // _ = UPDATED_NOTIFY.notified() => {
-                //     Command::new("kill")
-                //         .args(["-s", "INT", &child.id().expect("Getting child process id").to_string()])
-                //         .output()
-                //         .await
-                //         .expect("Killing child process");
-                // }
                 _ = async {
                     if let Err(e) = tokio::signal::ctrl_c().await {
                         error!("Failed to listen for ctrl-c; Service must be shut down manually: {e:#}");
