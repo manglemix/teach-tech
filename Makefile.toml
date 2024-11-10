@@ -18,6 +18,7 @@ args = ["run", "dev"]
 [tasks.run-api]
 dependencies = ["create-build"]
 workspace = false
+env = { LOG_LEVEL="INFO" }
 command = "cargo"
 cwd = "test-ws/teach-tech-built"
 args = ["run", "--", "run"]

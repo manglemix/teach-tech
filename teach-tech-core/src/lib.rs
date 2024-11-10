@@ -6,6 +6,7 @@ use std::{
     net::{IpAddr, Ipv4Addr, SocketAddr},
     path::Path,
     process::ExitCode,
+    sync::Arc,
 };
 
 use anyhow::Context;
@@ -13,6 +14,7 @@ use axum::Router;
 use clap::{Parser, Subcommand};
 use db::init_db;
 use serde::Deserialize;
+use tokio::sync::Notify;
 use tower_http::{compression, cors, decompression, trace};
 use tracing::error;
 use tracing_subscriber::EnvFilter;
@@ -62,6 +64,7 @@ impl TeachCore<()> {
         let core = auth::add_to_core(self).await;
         let core = users::admins::add_to_core(core);
         let core = users::students::add_to_core(core);
+        let core = users::instructors::add_to_core(core);
 
         let cors = cors::CorsLayer::new().allow_methods(cors::Any);
 
@@ -73,19 +76,29 @@ impl TeachCore<()> {
 
         let (finished_tx, finished_rx) = tokio::sync::oneshot::channel();
 
-        let service = tokio::spawn(async move {
-            let result = axum::serve(
-                listener,
-                router
-                    .layer(cors)
-                    .layer(trace::TraceLayer::new_for_http())
-                    .layer(compression::CompressionLayer::new())
-                    .layer(decompression::DecompressionLayer::new())
-                    .into_make_service_with_connect_info::<SocketAddr>(),
-            )
-            .await
-            .context("Serving API");
-            let _ = finished_tx.send(result);
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .context("Creating runtime")?;
+        let cancel = Arc::new(Notify::new());
+        let cancel_clone = cancel.clone();
+        let service_handle = std::thread::spawn(move || {
+            runtime.block_on(async {
+                tokio::select! {
+                    result = axum::serve(
+                        listener,
+                        router
+                            .layer(cors)
+                            .layer(trace::TraceLayer::new_for_http())
+                            .layer(compression::CompressionLayer::new())
+                            .layer(decompression::DecompressionLayer::new())
+                            .into_make_service_with_connect_info::<SocketAddr>(),
+                    ) => {
+                        let _ = finished_tx.send(result.context("Serving API"));
+                    }
+                    _ = cancel_clone.notified() => { }
+                }
+            });
         });
 
         tokio::select! {
@@ -107,7 +120,8 @@ impl TeachCore<()> {
                 #[cfg(not(debug_assertions))]
                 std::future::pending::<()>().await;
             } => {
-                service.abort();
+                cancel.notify_waiters();
+                let _ = service_handle.join();
                 #[cfg(debug_assertions)]
                 if let Ok("disable") = std::env::var("HOT_RELOAD").as_deref() {
                     // Do nothing
@@ -133,7 +147,7 @@ pub struct Cli {
     command: Command,
 }
 
-#[tokio::main]
+#[tokio::main(flavor = "current_thread")]
 pub async fn init_core<F, Fut>(f: F) -> anyhow::Result<ExitCode>
 where
     F: FnOnce(TeachCore) -> Fut,
@@ -255,10 +269,11 @@ mod hot_reload {
             path.pop();
             path.push("teach-tech-core");
             path.push("src");
-            path.push("lib.rs");
-            watcher
-                .watch(&path, notify::RecursiveMode::Recursive)
-                .expect("Watching for file changes");
+            if path.exists() && path.is_dir() {
+                watcher
+                    .watch(&path, notify::RecursiveMode::Recursive)
+                    .expect("Watching for file changes");
+            }
             std::thread::spawn(move || loop {
                 if !UPDATED.load(Ordering::Relaxed) {
                     if let Err(e) = watcher.poll() {
@@ -300,6 +315,7 @@ mod hot_reload {
             async move {
                 if UPDATED.load(Ordering::Relaxed) {
                     REQUESTED_NOTIFY.notify_waiters();
+                    // panic!("{}", std::process::id());
                     Ok(Response::builder().status(503).body(Body::empty()).unwrap())
                 } else {
                     fut.await

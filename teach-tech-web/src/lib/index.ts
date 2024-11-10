@@ -32,6 +32,7 @@ export async function onSubmitForLogin(
 		body: encodeURI(`user_id=${user_id}&password=${password}`)
 	});
 
+
 	if (resp.ok) {
 		await fetch(url.href, {
 			method: 'POST',
@@ -43,6 +44,8 @@ export async function onSubmitForLogin(
 		const segments = url.pathname.split('/');
 		const role = segments[2];
 		goto(`/${institution}/${role}`);
+	} else if (resp.status === 503) {
+		goto(`/${institution}/maintenance`);
 	} else {
 		alert('Failed to login');
 	}
@@ -66,4 +69,21 @@ export const authenticatedServerLoad = ({
 	return {
 		bearerToken
 	};
+};
+
+export const handleHttpStatus = (status: number, url: URL, institution: string) => {
+	const segments = url.pathname.split('/');
+	const role = segments[2];
+	if (status === 200 || status === 204) {
+
+	} else if (status === 401 || status === 403) {
+		goto(`/${institution}/${role}/logout`);
+	} else if (status == 503) {
+		goto(`/${institution}/maintenance`);
+	} else if (status == 500) {
+		goto(`/${institution}/errors/institution-error`);
+	} else {
+		return false;
+	}
+	return true;
 };

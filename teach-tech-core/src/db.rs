@@ -51,6 +51,10 @@ pub async fn reset_db(config: &str) -> anyhow::Result<()> {
     manager.drop_table(drop).await?;
 
     drop = Table::drop();
+    drop.table(users::instructors::Entity).if_exists();
+    manager.drop_table(drop).await?;
+
+    drop = Table::drop();
     drop.table(auth::token::Entity).if_exists();
     manager.drop_table(drop).await?;
 
@@ -65,6 +69,8 @@ pub async fn reset_db(config: &str) -> anyhow::Result<()> {
     let builder = conn.get_database_backend();
     let schema = Schema::new(builder);
     conn.execute(builder.build(&schema.create_table_from_entity(users::admins::Entity)))
+        .await?;
+    conn.execute(builder.build(&schema.create_table_from_entity(users::instructors::Entity)))
         .await?;
     conn.execute(builder.build(&schema.create_table_from_entity(users::students::Entity)))
         .await?;
