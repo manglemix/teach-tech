@@ -2,11 +2,11 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
 	import type { PageData } from './$types';
-	import { DateInput } from 'date-picker-svelte'
+	import { DateInput } from 'date-picker-svelte';
 
 	let { data }: { data: PageData } = $props();
-	let studentsToCreate: { name: string, birthdate: Date, pronouns: string }[] = $state([]);
-	let createdStudents: { user_id: string, password: string }[] = $state([]);
+	let studentsToCreate: { name: string; birthdate: Date; pronouns: string }[] = $state([]);
+	let createdStudents: { user_id: string; password: string }[] = $state([]);
 	let processing = $state(false);
 	let studentName = $state('');
 	let studentBirthday = $state(new Date());
@@ -29,21 +29,21 @@
 				method: 'POST',
 				headers: {
 					'Content-Type': 'application/json',
-					Authorization: `Bearer ${data.bearerToken}`,
+					Authorization: `Bearer ${data.bearerToken}`
 				},
-				body: JSON.stringify({ students: studentsToCreate }),
+				body: JSON.stringify({ students: studentsToCreate })
 			});
 
 			if (resp.ok) {
 				studentsToCreate = [];
 				createdStudents = (await resp.json()).students;
 			} else if (resp.status === 401) {
-				const segments = $page.url.pathname.split("/");
+				const segments = $page.url.pathname.split('/');
 				const role = segments[2];
 				goto(`${$page.params.institution}/${role}/invalidate`);
 			} else if (resp.status === 403) {
 				alert('Your permissions may have changed');
-				const segments = $page.url.pathname.split("/");
+				const segments = $page.url.pathname.split('/');
 				const role = segments[2];
 				goto(`${$page.params.institution}/${role}/invalidate`);
 			} else {
@@ -60,22 +60,34 @@
 		<label for="student_count" class="mt-4">Student Pronouns</label>
 		<input bind:value={studentPronouns} type="text" id="student_pronouns" name="student_pronouns" />
 
-		<button type="button" class="mt-4 rounded bg-blue-500 p-2 text-white" onclick={() => {
-			if (studentName === '' || studentPronouns === '') {
-				alert('Please fill out all fields');
-				return;
-			}
-			studentsToCreate.push({ name: studentName, birthdate: studentBirthday, pronouns: studentPronouns });
-			studentName = '';
-			studentBirthday = new Date();
-			studentPronouns = '';
-		}}>Add Student</button>
+		<button
+			type="button"
+			class="mt-4 rounded bg-blue-500 p-2 text-white"
+			onclick={() => {
+				if (studentName === '' || studentPronouns === '') {
+					alert('Please fill out all fields');
+					return;
+				}
+				studentsToCreate.push({
+					name: studentName,
+					birthdate: studentBirthday,
+					pronouns: studentPronouns
+				});
+				studentName = '';
+				studentBirthday = new Date();
+				studentPronouns = '';
+			}}>Add Student</button
+		>
 		{#each studentsToCreate as createStudent}
-			<p>{createStudent.name} ({createStudent.pronouns}): {createStudent.birthdate.toDateString()}</p>
+			<p>
+				{createStudent.name} ({createStudent.pronouns}): {createStudent.birthdate.toDateString()}
+			</p>
 		{/each}
 
 		{#if processing}
-			<button type="submit" class="mt-4 rounded bg-blue-500 p-2 text-white" disabled>Processing</button>
+			<button type="submit" class="mt-4 rounded bg-blue-500 p-2 text-white" disabled
+				>Processing</button
+			>
 		{:else}
 			<button type="submit" class="mt-4 rounded bg-blue-500 p-2 text-white">Create</button>
 		{/if}
@@ -83,7 +95,7 @@
 </div>
 
 <ul>
-{#each createdStudents as student}
-	<li>{student.user_id}: {student.password}</li>
-{/each}
+	{#each createdStudents as student}
+		<li>{student.user_id}: {student.password}</li>
+	{/each}
 </ul>

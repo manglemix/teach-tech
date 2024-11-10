@@ -12,14 +12,7 @@
 	<form
 		class="flex max-w-md flex-col justify-center"
 		onsubmit={(event) =>
-			onSubmitForLogin(
-				event,
-				user_id,
-				password,
-				data.host,
-				$page.params.institution,
-				$page.url
-			)}
+			onSubmitForLogin(event, user_id, password, data.host, $page.params.institution, $page.url)}
 	>
 		<label for="username" class="mt-4">User ID</label>
 		<input bind:value={user_id} type="text" id="user_id" name="user_id" required />

@@ -43,7 +43,12 @@ pub async fn new_rand(conn: &impl ConnectionTrait) -> Result<(Model, Zeroizing<S
         user_id = UserID::rand();
         password.clear();
         Alphanumeric.append_string(&mut OsRng, &mut password, 18);
-        match new_from_password(user_id, &password).await.expect("Hashing admin password").insert(conn).await {
+        match new_from_password(user_id, &password)
+            .await
+            .expect("Hashing admin password")
+            .insert(conn)
+            .await
+        {
             Ok(m) => break Ok((m, password)),
             Err(DbErr::RecordNotInserted) => continue,
             Err(e) => return Err(e),

@@ -33,21 +33,29 @@ pub enum Relation {}
 impl ActiveModelBehavior for ActiveModel {}
 
 pub async fn create_admin(username: String) -> anyhow::Result<()> {
-    get_db().transaction::<_, _, DbErr>(|txn| {
-        Box::pin(async move {
-            let (model, password) = new_rand(txn).await?;
-            let user_id = model.user_id;
+    get_db()
+        .transaction::<_, _, DbErr>(|txn| {
+            Box::pin(async move {
+                let (model, password) = new_rand(txn).await?;
+                let user_id = model.user_id;
 
-            users::admins::ActiveModel {
-                user_id: ActiveValue::set(user_id),
-                username: ActiveValue::set(username.clone()),
-                created_at: ActiveValue::set(chrono::Utc::now().naive_utc()),
-            }.insert(txn).await?;
+                users::admins::ActiveModel {
+                    user_id: ActiveValue::set(user_id),
+                    username: ActiveValue::set(username.clone()),
+                    created_at: ActiveValue::set(chrono::Utc::now().naive_utc()),
+                }
+                .insert(txn)
+                .await?;
 
-            println!("Created admin with user_id: {user_id}, username: {username}, password: {}", &*password);
-            Ok(())
+                println!(
+                    "Created admin with user_id: {user_id}, username: {username}, password: {}",
+                    &*password
+                );
+                Ok(())
+            })
         })
-    }).await.context("Creating admin")
+        .await
+        .context("Creating admin")
 }
 
 #[derive(Debug, Serialize)]

@@ -22,3 +22,5 @@ crossbeam.workspace = true
 tower-http = { version = "0.6.1", features = ["cors", "compression-br", "decompression-br", "trace"]}
 sea-orm-migration = "1.1.1"
 zeroize.workspace = true
+tower.workspace = true
+notify.workspace = true

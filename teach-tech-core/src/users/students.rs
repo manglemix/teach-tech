@@ -1,11 +1,23 @@
-use axum::{extract::Json, http::StatusCode, response::IntoResponse, routing::{get, post}};
-use axum_extra::{headers::{authorization::Bearer, Authorization}, TypedHeader};
+use axum::{
+    extract::Json,
+    http::StatusCode,
+    response::IntoResponse,
+    routing::{get, post},
+};
+use axum_extra::{
+    headers::{authorization::Bearer, Authorization},
+    TypedHeader,
+};
 use sea_orm::{entity::prelude::*, ActiveValue, TransactionTrait};
 use serde::{Deserialize, Serialize};
 use tracing::error;
 use zeroize::Zeroizing;
 
-use crate::{auth::{token, user_auth, UserID}, db::get_db, TeachCore};
+use crate::{
+    auth::{token, user_auth, UserID},
+    db::get_db,
+    TeachCore,
+};
 
 use super::admins;
 
@@ -31,29 +43,29 @@ impl ActiveModelBehavior for ActiveModel {}
 pub struct CreateStudent {
     pub name: String,
     pub birthdate: chrono::DateTime<chrono::Utc>,
-    pub pronouns: String
+    pub pronouns: String,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct CreateStudents {
-    pub students: Vec<CreateStudent>
+    pub students: Vec<CreateStudent>,
 }
 
 #[derive(Debug, Serialize)]
 pub struct CreatedStudent {
     pub user_id: UserID,
-    pub password: Zeroizing<String>
+    pub password: Zeroizing<String>,
 }
 
 #[derive(Debug, Serialize)]
 pub struct CreatedStudents {
-    pub students: Vec<CreatedStudent>
+    pub students: Vec<CreatedStudent>,
 }
 
 #[derive(Debug, Serialize)]
 pub struct StudentHome {
     #[serde(flatten)]
-    pub model: Model
+    pub model: Model,
 }
 
 pub fn add_to_core<S: Clone + Send + Sync + 'static>(core: TeachCore<S>) -> TeachCore<S> {

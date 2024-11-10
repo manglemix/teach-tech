@@ -1,7 +1,9 @@
 use std::sync::OnceLock;
 
 use anyhow::Context;
-use sea_orm::{sea_query::Table, ConnectOptions, ConnectionTrait, Database, DatabaseConnection, Schema};
+use sea_orm::{
+    sea_query::Table, ConnectOptions, ConnectionTrait, Database, DatabaseConnection, Schema,
+};
 use sea_orm_migration::SchemaManager;
 use serde::Deserialize;
 
@@ -62,10 +64,17 @@ pub async fn reset_db(config: &str) -> anyhow::Result<()> {
 
     let builder = conn.get_database_backend();
     let schema = Schema::new(builder);
-    conn.execute(builder.build(&schema.create_table_from_entity(users::admins::Entity))).await?;
-    conn.execute(builder.build(&schema.create_table_from_entity(users::students::Entity))).await?;
-    conn.execute(builder.build(&schema.create_table_from_entity(auth::token::Entity))).await?;
-    conn.execute(builder.build(&schema.create_table_from_entity(auth::user_auth::Entity))).await?;
-    conn.execute(builder.build(&schema.create_table_from_entity(users::admins::notifications::Entity))).await?;
+    conn.execute(builder.build(&schema.create_table_from_entity(users::admins::Entity)))
+        .await?;
+    conn.execute(builder.build(&schema.create_table_from_entity(users::students::Entity)))
+        .await?;
+    conn.execute(builder.build(&schema.create_table_from_entity(auth::token::Entity)))
+        .await?;
+    conn.execute(builder.build(&schema.create_table_from_entity(auth::user_auth::Entity)))
+        .await?;
+    conn.execute(
+        builder.build(&schema.create_table_from_entity(users::admins::notifications::Entity)),
+    )
+    .await?;
     Ok(())
 }

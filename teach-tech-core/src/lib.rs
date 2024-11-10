@@ -1,4 +1,6 @@
 #![feature(duration_constructors)]
+#![feature(impl_trait_in_assoc_type)]
+
 use std::{
     future::Future,
     net::{IpAddr, Ipv4Addr, SocketAddr},
@@ -65,11 +67,16 @@ impl TeachCore<()> {
 
         #[cfg(debug_assertions)]
         let cors = cors.allow_origin(cors::Any).allow_headers(cors::Any);
+        let router = core.router;
+        #[cfg(debug_assertions)]
+        let router = router.layer(hot_reload::HotReloadLayer::default());
+
+        let (finished_tx, finished_rx) = tokio::sync::oneshot::channel();
 
         let service = tokio::spawn(async move {
-            axum::serve(
+            let result = axum::serve(
                 listener,
-                core.router
+                router
                     .layer(cors)
                     .layer(trace::TraceLayer::new_for_http())
                     .layer(compression::CompressionLayer::new())
@@ -77,11 +84,12 @@ impl TeachCore<()> {
                     .into_make_service_with_connect_info::<SocketAddr>(),
             )
             .await
-            .context("Serving API")
+            .context("Serving API");
+            let _ = finished_tx.send(result);
         });
 
         tokio::select! {
-            result = service => {
+            result = finished_rx => {
                 result.context("Panicked within API service")??;
                 unreachable!("API Router terminated successfully")
             }
@@ -93,6 +101,21 @@ impl TeachCore<()> {
             } => {
                 Ok(ExitCode::SUCCESS)
             }
+            _ = async {
+                #[cfg(debug_assertions)]
+                hot_reload::REQUESTED_NOTIFY.notified().await;
+                #[cfg(not(debug_assertions))]
+                std::future::pending::<()>().await;
+            } => {
+                service.abort();
+                #[cfg(debug_assertions)]
+                if let Ok("disable") = std::env::var("HOT_RELOAD").as_deref() {
+                    // Do nothing
+                } else {
+                    hot_reload::reloader().await;
+                }
+                Ok(ExitCode::SUCCESS)
+            }
         }
     }
 }
@@ -101,7 +124,7 @@ impl TeachCore<()> {
 pub enum Command {
     CreateAdmin { username: String },
     Run,
-    ResetDB
+    ResetDB,
 }
 
 #[derive(Parser)]
@@ -145,4 +168,150 @@ where
 
 pub mod prelude {
     pub use super::init_core;
+}
+
+#[cfg(debug_assertions)]
+mod hot_reload {
+    use std::{
+        future::Future,
+        sync::atomic::{AtomicBool, Ordering},
+        task::{Context, Poll},
+    };
+
+    pub static UPDATED: AtomicBool = AtomicBool::new(false);
+    pub static UPDATED_NOTIFY: Notify = Notify::const_new();
+    pub static REQUESTED_NOTIFY: Notify = Notify::const_new();
+
+    use axum::{body::Body, extract::Request, response::Response, routing::Route};
+    use notify::{Config, EventKind, PollWatcher, Watcher};
+    use tokio::{process::Command, sync::Notify};
+    use tower::{Layer, Service};
+    use tracing::{error, info};
+
+    pub async fn reloader() {
+        loop {
+            tracing::warn!("Reloading now");
+            let mut child = Command::new("cargo")
+                .env("HOT_RELOAD", "disable")
+                .args(["run", "--", "run"])
+                .kill_on_drop(true)
+                .spawn()
+                .expect("Reloading failed");
+            tokio::select! {
+                result = child.wait() => {
+                    let status = result.expect("Waiting for child process");
+                    if !status.success() {
+                        tracing::warn!("Waiting for change before reloading");
+                        UPDATED.store(false, Ordering::Relaxed);
+                        UPDATED_NOTIFY.notified().await;
+                    }
+                }
+                // _ = UPDATED_NOTIFY.notified() => {
+                //     Command::new("kill")
+                //         .args(["-s", "INT", &child.id().expect("Getting child process id").to_string()])
+                //         .output()
+                //         .await
+                //         .expect("Killing child process");
+                // }
+                _ = async {
+                    if let Err(e) = tokio::signal::ctrl_c().await {
+                        error!("Failed to listen for ctrl-c; Service must be shut down manually: {e:#}");
+                        std::future::pending().await
+                    }
+                } => {
+                    Command::new("kill")
+                        .args(["-s", "INT", &child.id().expect("Getting child process id").to_string()])
+                        .output()
+                        .await
+                        .expect("Killing child process");
+                    break;
+                }
+            }
+        }
+    }
+
+    #[derive(Clone)]
+    pub struct HotReloadLayer {}
+
+    impl Default for HotReloadLayer {
+        fn default() -> Self {
+            let mut watcher = PollWatcher::new(
+                move |result: Result<notify::Event, notify::Error>| {
+                    match result {
+                        Ok(event) => match event.kind {
+                            EventKind::Modify(_) => {
+                                info!("{:?} modified", event.paths[0]);
+                            }
+                            _ => return,
+                        },
+                        Err(e) => {
+                            error!("Error watching for file changes: {e:#}");
+                        }
+                    }
+                    UPDATED.store(true, Ordering::Relaxed);
+                    UPDATED_NOTIFY.notify_waiters();
+                },
+                Config::default().with_manual_polling(),
+            )
+            .expect("Creating file watcher");
+            let mut path = std::env::current_exe().expect("Getting current executable path");
+            path.pop();
+            path.pop();
+            path.pop();
+            path.pop();
+            path.pop();
+            path.push("teach-tech-core");
+            path.push("src");
+            path.push("lib.rs");
+            watcher
+                .watch(&path, notify::RecursiveMode::Recursive)
+                .expect("Watching for file changes");
+            std::thread::spawn(move || loop {
+                if !UPDATED.load(Ordering::Relaxed) {
+                    if let Err(e) = watcher.poll() {
+                        error!("Error polling for file changes: {e:#}");
+                    }
+                }
+                std::thread::sleep(std::time::Duration::from_secs(2));
+            });
+            info!("Watching for file changes in {path:?}");
+
+            Self {}
+        }
+    }
+
+    impl Layer<Route> for HotReloadLayer {
+        type Service = HotReloadService;
+
+        fn layer(&self, service: Route) -> Self::Service {
+            HotReloadService { service }
+        }
+    }
+
+    #[derive(Clone)]
+    pub struct HotReloadService {
+        service: Route,
+    }
+
+    impl Service<Request> for HotReloadService {
+        type Response = <Route as Service<Request>>::Response;
+        type Error = <Route as Service<Request>>::Error;
+        type Future = impl Future<Output = <<Route as Service<Request>>::Future as Future>::Output>;
+
+        fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+            Service::<Request>::poll_ready(&mut self.service, cx)
+        }
+
+        fn call(&mut self, request: Request<Body>) -> Self::Future {
+            let fut = self.service.call(request);
+            async move {
+                if UPDATED.load(Ordering::Relaxed) {
+                    REQUESTED_NOTIFY.notify_waiters();
+                    Ok(Response::builder().status(503).body(Body::empty()).unwrap())
+                } else {
+                    fut.await
+                }
+            }
+        }
+    }
 }
