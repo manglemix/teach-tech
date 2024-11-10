@@ -6,11 +6,14 @@ use axum_extra::{
     TypedHeader,
 };
 use notifications::Notification;
+use rand::distributions::{Alphanumeric, DistString};
+use rand::rngs::OsRng;
 use sea_orm::{entity::prelude::*, ActiveValue, TransactionTrait};
 use serde::Serialize;
 use tracing::error;
+use zeroize::Zeroizing;
 
-use crate::auth::user_auth::new_rand;
+use crate::auth::user_auth::{self, new_from_password};
 use crate::{
     auth::{token, UserID},
     db::get_db,
@@ -32,25 +35,62 @@ pub enum Relation {}
 
 impl ActiveModelBehavior for ActiveModel {}
 
-pub async fn create_admin(username: String) -> anyhow::Result<()> {
+pub async fn create_admin(username: String, user_id: UserID, permissions: Vec<permissions::Permission>) -> anyhow::Result<()> {
     get_db()
         .transaction::<_, _, DbErr>(|txn| {
             Box::pin(async move {
-                let (model, password) = new_rand(txn).await?;
-                let user_id = model.user_id;
+                if let Some(_) = user_auth::Entity::find_by_id(user_id).one(get_db()).await? {
+                    users::admins::ActiveModel {
+                        user_id: ActiveValue::unchanged(user_id),
+                        username: ActiveValue::set(username.clone()),
+                        created_at: ActiveValue::not_set(),
+                    }
+                    .update(txn).await?;
 
-                users::admins::ActiveModel {
-                    user_id: ActiveValue::set(user_id),
-                    username: ActiveValue::set(username.clone()),
-                    created_at: ActiveValue::set(chrono::Utc::now().naive_utc()),
+                    println!(
+                        "Created admin with user_id: {user_id}, username: {username}",
+                    );
+                } else {
+                    let mut password = Zeroizing::new(String::new());
+                    loop {
+                        password.clear();
+                        Alphanumeric.append_string(&mut OsRng, &mut password, 18);
+                        match new_from_password(user_id, &password)
+                            .await
+                            .expect("Hashing admin password")
+                            .insert(get_db())
+                            .await
+                        {
+                            Ok(_) => break,
+                            Err(DbErr::RecordNotInserted) => continue,
+                            Err(e) => return Err(e),
+                        }
+                    }
+                    users::admins::ActiveModel {
+                        user_id: ActiveValue::set(user_id),
+                        username: ActiveValue::set(username.clone()),
+                        created_at: ActiveValue::set(chrono::Utc::now().naive_utc()),
+                    }
+                    .insert(txn).await?;
+    
+                    println!(
+                        "Created admin with new user_id: {user_id}, username: {username}, password: {}",
+                        &*password
+                    );
                 }
-                .insert(txn)
-                .await?;
 
-                println!(
-                    "Created admin with user_id: {user_id}, username: {username}, password: {}",
-                    &*password
-                );
+                permissions::Entity::delete_many().filter(permissions::Column::UserId.eq(user_id)).exec(txn).await?;
+
+                for permission in permissions {
+                    permissions::ActiveModel {
+                        id: ActiveValue::not_set(),
+                        user_id: ActiveValue::set(user_id),
+                        permission: ActiveValue::set(permission),
+                    }
+                    .insert(txn)
+                    .await?;
+                }
+
                 Ok(())
             })
         })
@@ -65,7 +105,11 @@ pub struct AdminHome {
     pub notifications: Vec<Notification>,
 }
 
-pub fn add_to_core<S: Clone + Send + Sync + 'static>(core: TeachCore<S>) -> TeachCore<S> {
+pub fn add_to_core<S: Clone + Send + Sync + 'static>(mut core: TeachCore<S>) -> TeachCore<S> {
+    core.add_db_reset_config(Entity);
+    core.add_db_reset_config(notifications::Entity);
+    core.add_db_reset_config(permissions::Entity);
+
     core.modify_router(|router| {
         router.route("/admin/home", get(|TypedHeader(Authorization(bearer)): TypedHeader<Authorization<Bearer>>| async move {
             let token = match token::Entity::find_by_id(bearer.token()).one(get_db()).await {
@@ -139,4 +183,38 @@ pub mod notifications {
     pub enum Relation {}
 
     impl ActiveModelBehavior for ActiveModel {}
+}
+
+pub mod permissions {
+    use sea_orm::entity::prelude::*;
+
+    use crate::auth::UserID;
+
+    #[derive(Clone, Debug, DeriveEntityModel)]
+    #[sea_orm(table_name = "admin_permissions")]
+    pub struct Model {
+        #[sea_orm(primary_key)]
+        pub id: i32,
+        pub user_id: UserID,
+        pub permission: Permission,
+    }
+
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
+
+    impl ActiveModelBehavior for ActiveModel {}
+
+    #[derive(EnumIter, DeriveActiveEnum, Clone, Debug, Copy, PartialEq, Eq, clap::ValueEnum)]
+    #[sea_orm(rs_type = "i32", db_type = "Integer")]
+    pub enum Permission {
+        CreateStudent = 0,
+        DeleteStudent = 1,
+        CreateInstructor = 2,
+        DeleteInstructor = 3,
+        CreateCourse = 4,
+        DeleteCourse = 5,
+        AssignInstructor = 6,
+        CreateAdmin = 7,
+        DeleteAdmin = 8,
+    }
 }

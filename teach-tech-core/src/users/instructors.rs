@@ -68,7 +68,10 @@ pub struct InstructorHome {
     pub model: Model,
 }
 
-pub fn add_to_core<S: Clone + Send + Sync + 'static>(core: TeachCore<S>) -> TeachCore<S> {
+pub fn add_to_core<S: Clone + Send + Sync + 'static>(mut core: TeachCore<S>) -> TeachCore<S> {
+    core.add_db_reset_config(Entity);
+    core.add_db_reset_config(permissions::Entity);
+
     core.modify_router(|router| {
         router.route("/instructor/home", get(|TypedHeader(Authorization(bearer)): TypedHeader<Authorization<Bearer>>| async move {
             let token = match token::Entity::find_by_id(bearer.token()).one(get_db()).await {
@@ -107,10 +110,10 @@ pub fn add_to_core<S: Clone + Send + Sync + 'static>(core: TeachCore<S>) -> Teac
                 }
             };
 
-            match admins::Entity::find_by_id(token.user_id).one(get_db()).await {
+            match admins::permissions::Entity::find().filter(admins::permissions::Column::UserId.eq(token.user_id)).filter(admins::permissions::Column::Permission.eq(admins::permissions::Permission::CreateInstructor)).one(get_db()).await {
                 Ok(Some(_)) => {}
                 Ok(None) => {
-                    return (StatusCode::FORBIDDEN, "Must be an administrator").into_response();
+                    return (StatusCode::FORBIDDEN, "Must be an administrator that can create instructors").into_response();
                 }
                 Err(e) => {
                     error!("Error reading admin data: {e:#}");
@@ -156,4 +159,34 @@ pub fn add_to_core<S: Clone + Send + Sync + 'static>(core: TeachCore<S>) -> Teac
             }
         }))
     })
+}
+
+pub mod permissions {
+    use sea_orm::entity::prelude::*;
+
+    use crate::auth::UserID;
+
+    #[derive(Clone, Debug, DeriveEntityModel)]
+    #[sea_orm(table_name = "instructor_permissions")]
+    pub struct Model {
+        #[sea_orm(primary_key)]
+        pub id: i32,
+        pub user_id: UserID,
+        pub permission: Permission,
+    }
+
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
+
+    impl ActiveModelBehavior for ActiveModel {}
+
+    #[derive(EnumIter, DeriveActiveEnum, Clone, Debug, Copy, PartialEq, Eq)]
+    #[sea_orm(rs_type = "i32", db_type = "Integer")]
+    pub enum Permission {
+        ViewGrades = 0,
+        SetGrades = 1,
+        GradeAssignment = 2,
+        CreateAssignment = 3,
+        ModifyRubric = 4,
+    }
 }

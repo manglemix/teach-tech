@@ -71,7 +71,10 @@ pub struct Token {
     pub expires_at: DateTime,
 }
 
-pub async fn add_to_core<S: Clone + Send + Sync + 'static>(core: TeachCore<S>) -> TeachCore<S> {
+pub async fn add_to_core<S: Clone + Send + Sync + 'static>(mut core: TeachCore<S>) -> TeachCore<S> {
+    core.add_db_reset_config(token::Entity);
+    core.add_db_reset_config(user_auth::Entity);
+
     core.modify_router(|router| {
         router.route(
             "/auth/login",

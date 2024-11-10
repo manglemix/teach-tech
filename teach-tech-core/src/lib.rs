@@ -12,7 +12,9 @@ use std::{
 use anyhow::Context;
 use axum::Router;
 use clap::{Parser, Subcommand};
-use db::init_db;
+use db::{get_db, init_db};
+use sea_orm::{sea_query::{IntoTableRef, Table, TableCreateStatement, TableDropStatement}, ConnectionTrait, EntityTrait, Schema};
+use sea_orm_migration::SchemaManager;
 use serde::Deserialize;
 use tokio::sync::Notify;
 use tower_http::{compression, cors, decompression, trace};
@@ -36,6 +38,8 @@ fn default_server_address() -> SocketAddr {
 
 pub struct TeachCore<S = ()> {
     router: Router<S>,
+    schema: Schema,
+    reset_db: Vec<(TableDropStatement, TableCreateStatement)>,
     config: String,
 }
 
@@ -44,15 +48,37 @@ impl<S> TeachCore<S> {
         &self.config
     }
 
+    pub fn add_db_reset_config(&mut self, entity: impl IntoTableRef + EntityTrait) {
+        let mut drop = Table::drop();
+        drop
+            .table(entity)
+            .if_exists();
+        let create = self.schema.create_table_from_entity(entity);
+        self.reset_db.push((drop, create));
+    }
+
     pub fn modify_router<T>(self, f: impl FnOnce(Router<S>) -> Router<T>) -> TeachCore<T> {
         TeachCore {
             router: f(self.router),
+            schema: self.schema,
+            reset_db: self.reset_db,
             config: self.config,
         }
     }
 }
 
 impl TeachCore<()> {
+    pub async fn reset_db(self) -> anyhow::Result<ExitCode> {
+        let manager = SchemaManager::new(get_db());
+        let builder = get_db().get_database_backend();
+
+        for(drop, create) in self.reset_db {
+            manager.drop_table(drop).await?;
+            get_db().execute(builder.build(&create)).await?;
+        }
+        Ok(ExitCode::SUCCESS)
+    }
+
     pub async fn serve(self) -> anyhow::Result<ExitCode> {
         let api_config: ApiConfig =
             toml::from_str(self.get_config_str()).context("Parsing teach-config.toml")?;
@@ -61,16 +87,11 @@ impl TeachCore<()> {
             .await
             .with_context(|| format!("Binding to {}", api_config.server_address))?;
 
-        let core = auth::add_to_core(self).await;
-        let core = users::admins::add_to_core(core);
-        let core = users::students::add_to_core(core);
-        let core = users::instructors::add_to_core(core);
-
         let cors = cors::CorsLayer::new().allow_methods(cors::Any);
 
         #[cfg(debug_assertions)]
         let cors = cors.allow_origin(cors::Any).allow_headers(cors::Any);
-        let router = core.router;
+        let router = self.router;
         #[cfg(debug_assertions)]
         let router = router.layer(hot_reload::HotReloadLayer::default());
 
@@ -136,7 +157,12 @@ impl TeachCore<()> {
 
 #[derive(Subcommand)]
 pub enum Command {
-    CreateAdmin { username: String },
+    CreateAdmin {
+        username: String,
+        #[arg(value_parser = clap::value_parser!(i32).range(0..))]
+        user_id: i32,
+        permissions: Vec<users::admins::permissions::Permission>
+    },
     Run,
     ResetDB,
 }
@@ -151,7 +177,7 @@ pub struct Cli {
 pub async fn init_core<F, Fut>(f: F) -> anyhow::Result<ExitCode>
 where
     F: FnOnce(TeachCore) -> Fut,
-    Fut: Future<Output = anyhow::Result<ExitCode>>,
+    Fut: Future<Output = anyhow::Result<TeachCore>>,
 {
     let Cli { command } = Cli::parse();
     if !Path::new("teach-config.toml").exists() {
@@ -164,20 +190,31 @@ where
         .init();
     init_db(&config).await?;
     match command {
-        Command::CreateAdmin { username } => {
-            return create_admin(username).await.map(|()| ExitCode::SUCCESS);
+        Command::CreateAdmin { username, user_id, permissions } => {
+            return create_admin(username, user_id.try_into().unwrap(), permissions).await.map(|()| ExitCode::SUCCESS);
         }
         Command::Run => {}
-        Command::ResetDB => {
-            return db::reset_db(&config).await.map(|()| ExitCode::SUCCESS);
-        }
+        Command::ResetDB => {}
     }
 
+    let builder = get_db().get_database_backend();
     let core = TeachCore {
         router: Router::new(),
+        schema: Schema::new(builder),
+        reset_db: vec![],
         config,
     };
-    f(core).await
+    let core = auth::add_to_core(core).await;
+    let core = users::admins::add_to_core(core);
+    let core = users::students::add_to_core(core);
+    let core = users::instructors::add_to_core(core);
+    let core = f(core).await?;
+
+    match command {
+        Command::CreateAdmin { .. } => unreachable!(),
+        Command::Run => core.serve().await,
+        Command::ResetDB => core.reset_db().await,
+    }
 }
 
 pub mod prelude {

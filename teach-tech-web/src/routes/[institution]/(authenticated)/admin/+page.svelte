@@ -48,8 +48,7 @@
 			} else {
 				if (resp.status == 403) {
 					alert('Your permissions may have changed');
-				}
-				if (!handleHttpStatus(resp.status, $page.url, $page.params.institution)) {
+				} else if (!handleHttpStatus(resp.status, $page.url, $page.params.institution)) {
 					alert('Failed to create students');
 				}
 			}
@@ -125,8 +124,7 @@
 			} else {
 				if (resp.status == 403) {
 					alert('Your permissions may have changed');
-				}
-				if (!handleHttpStatus(resp.status, $page.url, $page.params.institution)) {
+				} else if (!handleHttpStatus(resp.status, $page.url, $page.params.institution)) {
 					alert('Failed to create instructors');
 				}
 			}
@@ -139,7 +137,12 @@
 		<label for="instructor_birthday" class="mt-4">Instructor Birthday</label>
 		<DateInput bind:value={instructorBirthday} id="instructor_birthday" />
 		<label for="instructor_pronouns" class="mt-4">Instructor Pronouns</label>
-		<input bind:value={instructorPronouns} type="text" id="instructor_pronouns" name="instructor_pronouns" />
+		<input
+			bind:value={instructorPronouns}
+			type="text"
+			id="instructor_pronouns"
+			name="instructor_pronouns"
+		/>
 
 		<button
 			type="button"

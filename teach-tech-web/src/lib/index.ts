@@ -32,7 +32,6 @@ export async function onSubmitForLogin(
 		body: encodeURI(`user_id=${user_id}&password=${password}`)
 	});
 
-
 	if (resp.ok) {
 		await fetch(url.href, {
 			method: 'POST',
@@ -75,7 +74,6 @@ export const handleHttpStatus = (status: number, url: URL, institution: string) 
 	const segments = url.pathname.split('/');
 	const role = segments[2];
 	if (status === 200 || status === 204) {
-
 	} else if (status === 401 || status === 403) {
 		goto(`/${institution}/${role}/logout`);
 	} else if (status == 503) {

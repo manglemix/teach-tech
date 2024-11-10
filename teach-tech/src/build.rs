@@ -150,7 +150,7 @@ pub fn build_at_path(path: &Path) -> anyhow::Result<ExitCode> {
             writeln!(file, "\t\tlet core = {name}::add_to_core(core).await?;")?;
         }
 
-        writeln!(file, "\t\tcore.serve().await")?;
+        writeln!(file, "\t\tOk(core)")?;
         writeln!(file, "\t}})")?;
         writeln!(file, "}}")?;
     };
