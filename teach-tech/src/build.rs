@@ -144,9 +144,12 @@ pub fn build_at_path(path: &Path) -> anyhow::Result<ExitCode> {
             file,
             "\nfn main() -> anyhow::Result<std::process::ExitCode> {{"
         )?;
-        writeln!(file, "\tinit_core(|core| async move {{")?;
+        writeln!(file, "\tinit_core(|mut core| async move {{")?;
+        writeln!(file, "\t\tcore.add_info(\"version\", env!(\"CARGO_PKG_VERSION\"));")?;
 
         for (name, _) in &integrations {
+            let name = name.replace("-", "_");
+            // writeln!(file, "\t\tlet core = AddToCore::call({name}::add_to_core, core).await?;")?;
             writeln!(file, "\t\tlet core = {name}::add_to_core(core).await?;")?;
         }
 

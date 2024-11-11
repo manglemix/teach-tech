@@ -1,27 +1,34 @@
 #![feature(duration_constructors)]
 #![feature(impl_trait_in_assoc_type)]
+#![feature(build_hasher_default_const_new)]
+#![feature(const_collections_with_hasher)]
+#![feature(try_blocks)]
 
 use std::{
-    future::Future,
-    net::{IpAddr, Ipv4Addr, SocketAddr},
-    path::Path,
-    process::ExitCode,
-    sync::Arc,
+    any::Any, future::Future, net::{IpAddr, Ipv4Addr, SocketAddr}, path::Path, pin::Pin, process::ExitCode, sync::Arc
 };
 
 use anyhow::Context;
-use axum::Router;
+use axum::{body::Body, response::Response, routing::get, Router};
 use clap::{Parser, Subcommand};
 use db::{get_db, init_db};
+use fxhash::FxHashMap;
 use sea_orm::{sea_query::{IntoTableRef, Table, TableCreateStatement, TableDropStatement}, ConnectionTrait, EntityTrait, Schema};
 use sea_orm_migration::SchemaManager;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
+use serde_json::to_value;
 use tokio::sync::Notify;
 use tower_http::{compression, cors, decompression, trace};
 use tracing::error;
 use tracing_subscriber::EnvFilter;
 use users::admins::create_admin;
 
+pub use anyhow;
+pub use axum;
+pub use serde_json;
+pub use tokio;
+
+pub mod siblings;
 pub mod auth;
 pub mod db;
 pub mod users;
@@ -41,6 +48,9 @@ pub struct TeachCore<S = ()> {
     schema: Schema,
     reset_db: Vec<(TableDropStatement, TableCreateStatement)>,
     config: String,
+    info: FxHashMap<String, serde_json::Value>,
+    on_serve: Vec<Box<dyn FnOnce() -> Pin<Box<dyn Future<Output=anyhow::Result<()>>>> + Send>>,
+    to_drop: Vec<Box<dyn Any>>,
 }
 
 impl<S> TeachCore<S> {
@@ -57,17 +67,37 @@ impl<S> TeachCore<S> {
         self.reset_db.push((drop, create));
     }
 
+    pub fn add_info(&mut self, name: impl Into<String>, value: impl Serialize) {
+        let name = name.into();
+        let value = to_value(value).expect("Serializing info value");
+        if self.info.insert(name.clone(), value).is_some() {
+            panic!("Duplicate info key: {}", name);
+        }
+    }
+
     pub fn modify_router<T>(self, f: impl FnOnce(Router<S>) -> Router<T>) -> TeachCore<T> {
         TeachCore {
             router: f(self.router),
+            info: self.info,
             schema: self.schema,
             reset_db: self.reset_db,
             config: self.config,
+            on_serve: self.on_serve,
+            to_drop: self.to_drop,
         }
     }
-}
 
-impl TeachCore<()> {
+    pub fn add_on_serve<Fut>(&mut self, f: impl FnOnce() -> Fut + Send + 'static)
+    where 
+        Fut: Future<Output = anyhow::Result<()>> + 'static,
+    {
+        self.on_serve.push(Box::new(|| Box::pin(f())));
+    }
+
+    pub fn add_to_drop(&mut self, x: impl Any) {
+        self.to_drop.push(Box::new(x));
+    }
+
     pub async fn reset_db(self) -> anyhow::Result<ExitCode> {
         let manager = SchemaManager::new(get_db());
         let builder = get_db().get_database_backend();
@@ -78,7 +108,9 @@ impl TeachCore<()> {
         }
         Ok(ExitCode::SUCCESS)
     }
+}
 
+impl TeachCore<()> {
     pub async fn serve(self) -> anyhow::Result<ExitCode> {
         let api_config: ApiConfig =
             toml::from_str(self.get_config_str()).context("Parsing teach-config.toml")?;
@@ -105,6 +137,12 @@ impl TeachCore<()> {
         let cancel_clone = cancel.clone();
         let service_handle = std::thread::spawn(move || {
             runtime.block_on(async {
+                for on_serve in self.on_serve {
+                    if let Err(e) = on_serve().await {
+                        let _ = finished_tx.send(Err(e).context("Calling on_serve API"));
+                        return;
+                    }
+                }
                 tokio::select! {
                     result = axum::serve(
                         listener,
@@ -133,6 +171,8 @@ impl TeachCore<()> {
                     std::future::pending().await
                 }
             } => {
+                cancel.notify_waiters();
+                let _ = service_handle.join();
                 Ok(ExitCode::SUCCESS)
             }
             _ = async {
@@ -200,15 +240,30 @@ where
     let builder = get_db().get_database_backend();
     let core = TeachCore {
         router: Router::new(),
+        info: FxHashMap::default(),
         schema: Schema::new(builder),
         reset_db: vec![],
         config,
+        on_serve: vec![],
+        to_drop: vec![],
     };
     let core = auth::add_to_core(core).await;
     let core = users::admins::add_to_core(core);
     let core = users::students::add_to_core(core);
     let core = users::instructors::add_to_core(core);
-    let core = f(core).await?;
+    let core = siblings::add_to_core(core)?;
+    let mut core = f(core).await?;
+    let info= std::mem::take(&mut core.info);
+    let info = serde_json::to_string(&info).unwrap();
+    let info: &_ = Box::leak(info.into_boxed_str());
+    core.router = core.router.route("/info", get(move || 
+        std::future::ready(
+            Response::builder()
+                .header("Content-Type", "application/json")
+                .body(Body::from(info))
+                .unwrap()
+        )
+    ));
 
     match command {
         Command::CreateAdmin { .. } => unreachable!(),
@@ -217,8 +272,24 @@ where
     }
 }
 
+#[diagnostic::on_unimplemented(
+    message = "`{Self}` is not a function pointer that accepts a `TeachCore` and returns a future which resolves to `anyhow::Result<TeachCore>`",
+)]
+pub trait AddToCore<S> {
+    fn call(self, core: TeachCore<S>) -> impl std::future::Future<Output = anyhow::Result<TeachCore<S>>>;
+}
+
+impl<Fut, S> AddToCore<S> for fn(TeachCore<S>) -> Fut
+where 
+    Fut: Future<Output = anyhow::Result<TeachCore<S>>>,
+{
+    async fn call(self, core: TeachCore<S>) -> anyhow::Result<TeachCore<S>> {
+        self(core).await
+    }
+}
+
 pub mod prelude {
-    pub use super::init_core;
+    pub use super::{init_core, AddToCore};
 }
 
 #[cfg(debug_assertions)]
@@ -305,6 +376,15 @@ mod hot_reload {
             path.pop();
             path.pop();
             path.push("teach-tech-core");
+            path.push("src");
+            if path.exists() && path.is_dir() {
+                watcher
+                    .watch(&path, notify::RecursiveMode::Recursive)
+                    .expect("Watching for file changes");
+            }
+            path.pop();
+            path.pop();
+            path.push("teach-tech");
             path.push("src");
             if path.exists() && path.is_dir() {
                 watcher

@@ -24,3 +24,7 @@ sea-orm-migration = "1.1.1"
 zeroize.workspace = true
 tower.workspace = true
 notify.workspace = true
+serde_json.workspace = true
+fxhash.workspace = true
+axum-macros = { version = "0.3.0-rc.3" }
+futures.workspace = true

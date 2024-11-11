@@ -16,7 +16,7 @@ export const load: LayoutLoad = async ({ params, fetch, data }) => {
 			redirect(307, `/${params.institution}/student/logout`);
 		}
 		if (resp.status === 403) {
-			redirect(307, `/select-institution?inst=${params.institution}`);
+			redirect(307, `/${params.institution}/student/invalid`);
 		}
 		redirect(307, `/${params.institution}/errors/institution-error`);
 	}

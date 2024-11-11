@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
 	import { handleHttpStatus } from '$lib';
 	import type { PageData } from './$types';

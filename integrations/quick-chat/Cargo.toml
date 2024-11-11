@@ -1,0 +1,10 @@
+[package]
+name = "quick-chat"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+teach-tech-core.workspace = true
+fxhash.workspace = true
+serde.workspace = true
+sea-orm.workspace = true
