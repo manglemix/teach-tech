@@ -8,13 +8,10 @@ use futures::{stream::FuturesUnordered, StreamExt};
 use fxhash::{FxBuildHasher, FxHashMap};
 use sea_orm::{prelude::*, ActiveValue};
 use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt, BufReader, BufWriter},
-    net::{
+    io::{AsyncReadExt, AsyncWriteExt, BufReader, BufWriter}, net::{
         tcp::{OwnedReadHalf, OwnedWriteHalf, ReuniteError},
         TcpListener, TcpStream,
-    },
-    runtime::Handle,
-    sync::Mutex,
+    }, sync::Mutex
 };
 use tracing::error;
 
@@ -100,37 +97,28 @@ async fn handle_tcp_reader(mut reader: BufReader<OwnedReadHalf>, peer_ip: IpAddr
 pub fn add_to_core<S: Clone + Send + Sync + 'static>(
     mut core: TeachCore<S>,
 ) -> anyhow::Result<TeachCore<S>> {
-    struct OnDrop {
-        server_address: SocketAddr,
-    }
-
-    impl Drop for OnDrop {
-        fn drop(&mut self) {
-            Handle::current().block_on(async {
-                if let Err(e) = Entity::delete_by_id(&self.server_address.to_string())
-                    .exec(get_db())
-                    .await
-                {
-                    error!("Failed to remove server address from database: {}", e);
-                }
-            });
-        }
-    }
-
     core.add_db_reset_config(Entity);
     let api_config: ApiConfig = toml::from_str(core.get_config_str())?;
     CURRENT_ADDRESS
         .set(api_config.server_address)
         .expect("Server address is already initialized");
-    core.add_to_drop(OnDrop {
-        server_address: api_config.server_address,
+    core.add_to_drop(move || async move {
+        println!("Deleting server address from database");
+        if let Err(e) = Entity::delete_by_id(&api_config.server_address.to_string())
+            .exec(get_db())
+            .await
+        {
+            error!("Failed to remove server address from database: {}", e);
+        }
     });
     core.add_on_serve(move || async move {
-        ActiveModel {
-            address: ActiveValue::set(api_config.server_address.to_string()),
-        }
-        .insert(get_db())
-        .await?;
+        // if !api_config.server_address.ip().is_unspecified() && !api_config.server_address.ip().is_loopback() {
+            ActiveModel {
+                address: ActiveValue::set(api_config.server_address.to_string()),
+            }
+            .insert(get_db())
+            .await?;
+        // }
         let mut addr = api_config.server_address;
         addr.set_port(SIBLING_PORT);
         let listener = TcpListener::bind(addr).await?;

@@ -5,13 +5,7 @@
 #![feature(try_blocks)]
 
 use std::{
-    any::Any,
-    future::Future,
-    net::{IpAddr, Ipv4Addr, SocketAddr},
-    path::Path,
-    pin::Pin,
-    process::ExitCode,
-    sync::Arc,
+    future::Future, net::{IpAddr, Ipv4Addr, SocketAddr}, path::Path, pin::Pin, process::ExitCode, sync::Arc
 };
 
 use anyhow::Context;
@@ -59,7 +53,7 @@ pub struct TeachCore<S = ()> {
     config: String,
     info: FxHashMap<String, serde_json::Value>,
     on_serve: Vec<Box<dyn FnOnce() -> Pin<Box<dyn Future<Output = anyhow::Result<()>>>> + Send>>,
-    to_drop: Vec<Box<dyn Any>>,
+    to_drop: Vec<Box<dyn FnOnce() -> Pin<Box<dyn Future<Output = ()>>> + Send>>,
 }
 
 impl<S> TeachCore<S> {
@@ -101,8 +95,11 @@ impl<S> TeachCore<S> {
         self.on_serve.push(Box::new(|| Box::pin(f())));
     }
 
-    pub fn add_to_drop(&mut self, x: impl Any) {
-        self.to_drop.push(Box::new(x));
+    pub fn add_to_drop<Fut>(&mut self, f: impl FnOnce() -> Fut + Send + 'static)
+    where
+        Fut: Future<Output = ()> + 'static,
+    {
+        self.to_drop.push(Box::new(|| Box::pin(f())));
     }
 
     pub async fn reset_db(self) -> anyhow::Result<ExitCode> {
@@ -113,6 +110,17 @@ impl<S> TeachCore<S> {
             manager.drop_table(drop).await?;
             get_db().execute(builder.build(&create)).await?;
         }
+
+        let _ = std::thread::spawn(move || {
+            tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()
+                .unwrap()
+                .block_on(async {
+                    drop(self.to_drop);
+                });
+        }).join();
+
         Ok(ExitCode::SUCCESS)
     }
 }
@@ -180,7 +188,6 @@ impl TeachCore<()> {
             } => {
                 cancel.notify_waiters();
                 let _ = service_handle.join();
-                Ok(ExitCode::SUCCESS)
             }
             _ = async {
                 #[cfg(debug_assertions)]
@@ -196,9 +203,14 @@ impl TeachCore<()> {
                 } else {
                     hot_reload::reloader().await;
                 }
-                Ok(ExitCode::SUCCESS)
             }
         }
+
+        for to_drop in self.to_drop {
+            to_drop().await;
+        }
+
+        Ok(ExitCode::SUCCESS)
     }
 }
 
