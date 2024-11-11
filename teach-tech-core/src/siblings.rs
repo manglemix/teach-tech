@@ -1,18 +1,31 @@
-use std::{collections::{hash_map::Entry, HashMap}, net::{IpAddr, SocketAddr}, sync::OnceLock};
+use std::{
+    collections::{hash_map::Entry, HashMap},
+    net::{IpAddr, SocketAddr},
+    sync::OnceLock,
+};
 
 use futures::{stream::FuturesUnordered, StreamExt};
 use fxhash::{FxBuildHasher, FxHashMap};
 use sea_orm::{prelude::*, ActiveValue};
-use tokio::{io::{AsyncReadExt, AsyncWriteExt, BufReader, BufWriter}, net::{tcp::{OwnedReadHalf, OwnedWriteHalf, ReuniteError}, TcpListener, TcpStream}, runtime::Handle, sync::Mutex};
+use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt, BufReader, BufWriter},
+    net::{
+        tcp::{OwnedReadHalf, OwnedWriteHalf, ReuniteError},
+        TcpListener, TcpStream,
+    },
+    runtime::Handle,
+    sync::Mutex,
+};
 use tracing::error;
 
 use crate::{db::get_db, ApiConfig, TeachCore};
 
 static CURRENT_ADDRESS: OnceLock<SocketAddr> = OnceLock::new();
 const SIBLING_PORT: u16 = 22114;
-static SIBLING_MESSAGE_HANDLERS: Mutex<Vec<Box<dyn FnMut(&str, &[u8]) + Send>>> = Mutex::const_new(vec![]);
-static SIBLING_CONNS: Mutex<FxHashMap<IpAddr, BufWriter<OwnedWriteHalf>>> = Mutex::const_new(HashMap::with_hasher(FxBuildHasher::new()));
-
+static SIBLING_MESSAGE_HANDLERS: Mutex<Vec<Box<dyn FnMut(&str, &[u8]) + Send>>> =
+    Mutex::const_new(vec![]);
+static SIBLING_CONNS: Mutex<FxHashMap<IpAddr, BufWriter<OwnedWriteHalf>>> =
+    Mutex::const_new(HashMap::with_hasher(FxBuildHasher::new()));
 
 async fn handle_tcp_reader(mut reader: BufReader<OwnedReadHalf>, peer_ip: IpAddr) {
     tokio::spawn(async move {
@@ -50,7 +63,10 @@ async fn handle_tcp_reader(mut reader: BufReader<OwnedReadHalf>, peer_ip: IpAddr
                 }
             };
             buffer.resize((source_size + data_size) as usize, 0);
-            match reader.read_exact(&mut buffer[(source_size as usize)..]).await {
+            match reader
+                .read_exact(&mut buffer[(source_size as usize)..])
+                .await
+            {
                 Ok(_) => {}
                 Err(e) => {
                     if e.kind() == std::io::ErrorKind::UnexpectedEof {
@@ -81,16 +97,20 @@ async fn handle_tcp_reader(mut reader: BufReader<OwnedReadHalf>, peer_ip: IpAddr
     });
 }
 
-
-pub fn add_to_core<S: Clone + Send + Sync + 'static>(mut core: TeachCore<S>) -> anyhow::Result<TeachCore<S>> {
+pub fn add_to_core<S: Clone + Send + Sync + 'static>(
+    mut core: TeachCore<S>,
+) -> anyhow::Result<TeachCore<S>> {
     struct OnDrop {
-        server_address: SocketAddr
+        server_address: SocketAddr,
     }
 
     impl Drop for OnDrop {
         fn drop(&mut self) {
             Handle::current().block_on(async {
-                if let Err(e) = Entity::delete_by_id(&self.server_address.to_string()).exec(get_db()).await {
+                if let Err(e) = Entity::delete_by_id(&self.server_address.to_string())
+                    .exec(get_db())
+                    .await
+                {
                     error!("Failed to remove server address from database: {}", e);
                 }
             });
@@ -99,14 +119,18 @@ pub fn add_to_core<S: Clone + Send + Sync + 'static>(mut core: TeachCore<S>) -> 
 
     core.add_db_reset_config(Entity);
     let api_config: ApiConfig = toml::from_str(core.get_config_str())?;
-    CURRENT_ADDRESS.set(api_config.server_address).expect("Server address is already initialized");
+    CURRENT_ADDRESS
+        .set(api_config.server_address)
+        .expect("Server address is already initialized");
     core.add_to_drop(OnDrop {
-        server_address: api_config.server_address
+        server_address: api_config.server_address,
     });
     core.add_on_serve(move || async move {
         ActiveModel {
-            address: ActiveValue::set(api_config.server_address.to_string())
-        }.insert(get_db()).await?;
+            address: ActiveValue::set(api_config.server_address.to_string()),
+        }
+        .insert(get_db())
+        .await?;
         let mut addr = api_config.server_address;
         addr.set_port(SIBLING_PORT);
         let listener = TcpListener::bind(addr).await?;
@@ -163,15 +187,21 @@ pub async fn send_to_siblings_raw(source: &str, bytes: &[u8]) -> anyhow::Result<
                     let (reader, writer) = stream.into_split();
                     vacant_entry.insert(BufWriter::new(writer));
                     handle_tcp_reader(BufReader::new(reader), addr.ip()).await;
-                },
+                }
             }
         }
 
         for (&addr, conn) in sibling_conns.iter_mut() {
             futures.push(async move {
-                conn.write_u64(source.len() as u64).await.map_err(|e| (e, addr))?;
-                conn.write_all(source.as_bytes()).await.map_err(|e| (e, addr))?;
-                conn.write_u64(bytes.len() as u64).await.map_err(|e| (e, addr))?;
+                conn.write_u64(source.len() as u64)
+                    .await
+                    .map_err(|e| (e, addr))?;
+                conn.write_all(source.as_bytes())
+                    .await
+                    .map_err(|e| (e, addr))?;
+                conn.write_u64(bytes.len() as u64)
+                    .await
+                    .map_err(|e| (e, addr))?;
                 conn.write_all(bytes).await.map_err(|e| (e, addr))?;
                 Result::<_, (std::io::Error, IpAddr)>::Ok(())
             });
@@ -195,8 +225,7 @@ pub async fn send_to_siblings_raw(source: &str, bytes: &[u8]) -> anyhow::Result<
     Ok(())
 }
 
-pub async fn add_sibling_message_handler_raw(f: impl FnMut(&str, &[u8]) + Send + 'static)
-{
+pub async fn add_sibling_message_handler_raw(f: impl FnMut(&str, &[u8]) + Send + 'static) {
     SIBLING_MESSAGE_HANDLERS.lock().await.push(Box::new(f));
 }
 
@@ -223,7 +252,7 @@ macro_rules! add_sibling_message_handler_raw {
 #[sea_orm(table_name = "backend_data")]
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
-    pub address: String
+    pub address: String,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

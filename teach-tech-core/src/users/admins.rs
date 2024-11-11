@@ -35,7 +35,11 @@ pub enum Relation {}
 
 impl ActiveModelBehavior for ActiveModel {}
 
-pub async fn create_admin(username: String, user_id: UserID, permissions: Vec<permissions::Permission>) -> anyhow::Result<()> {
+pub async fn create_admin(
+    username: String,
+    user_id: UserID,
+    permissions: Vec<permissions::Permission>,
+) -> anyhow::Result<()> {
     get_db()
         .transaction::<_, _, DbErr>(|txn| {
             Box::pin(async move {
@@ -72,7 +76,7 @@ pub async fn create_admin(username: String, user_id: UserID, permissions: Vec<pe
                         created_at: ActiveValue::set(chrono::Utc::now().naive_utc()),
                     }
                     .insert(txn).await?;
-    
+
                     println!(
                         "Created admin with new user_id: {user_id}, username: {username}, password: {}",
                         &*password

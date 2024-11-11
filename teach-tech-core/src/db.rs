@@ -1,9 +1,7 @@
 use std::sync::OnceLock;
 
 use anyhow::Context;
-use sea_orm::{
-    ConnectOptions, Database, DatabaseConnection
-};
+use sea_orm::{ConnectOptions, Database, DatabaseConnection};
 use serde::Deserialize;
 
 static MAIN_DB: OnceLock<DatabaseConnection> = OnceLock::new();

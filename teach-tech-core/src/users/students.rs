@@ -70,7 +70,7 @@ pub struct StudentHome {
 
 pub fn add_to_core<S: Clone + Send + Sync + 'static>(mut core: TeachCore<S>) -> TeachCore<S> {
     core.add_db_reset_config(Entity);
-    
+
     core.modify_router(|router| {
         router.route("/student/home", get(|TypedHeader(Authorization(bearer)): TypedHeader<Authorization<Bearer>>| async move {
             let token = match token::Entity::find_by_id(bearer.token()).one(get_db()).await {

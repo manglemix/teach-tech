@@ -5,7 +5,13 @@
 #![feature(try_blocks)]
 
 use std::{
-    any::Any, future::Future, net::{IpAddr, Ipv4Addr, SocketAddr}, path::Path, pin::Pin, process::ExitCode, sync::Arc
+    any::Any,
+    future::Future,
+    net::{IpAddr, Ipv4Addr, SocketAddr},
+    path::Path,
+    pin::Pin,
+    process::ExitCode,
+    sync::Arc,
 };
 
 use anyhow::Context;
@@ -13,7 +19,10 @@ use axum::{body::Body, response::Response, routing::get, Router};
 use clap::{Parser, Subcommand};
 use db::{get_db, init_db};
 use fxhash::FxHashMap;
-use sea_orm::{sea_query::{IntoTableRef, Table, TableCreateStatement, TableDropStatement}, ConnectionTrait, EntityTrait, Schema};
+use sea_orm::{
+    sea_query::{IntoTableRef, Table, TableCreateStatement, TableDropStatement},
+    ConnectionTrait, EntityTrait, Schema,
+};
 use sea_orm_migration::SchemaManager;
 use serde::{Deserialize, Serialize};
 use serde_json::to_value;
@@ -28,9 +37,9 @@ pub use axum;
 pub use serde_json;
 pub use tokio;
 
-pub mod siblings;
 pub mod auth;
 pub mod db;
+pub mod siblings;
 pub mod users;
 
 #[derive(Debug, Clone, Deserialize)]
@@ -49,7 +58,7 @@ pub struct TeachCore<S = ()> {
     reset_db: Vec<(TableDropStatement, TableCreateStatement)>,
     config: String,
     info: FxHashMap<String, serde_json::Value>,
-    on_serve: Vec<Box<dyn FnOnce() -> Pin<Box<dyn Future<Output=anyhow::Result<()>>>> + Send>>,
+    on_serve: Vec<Box<dyn FnOnce() -> Pin<Box<dyn Future<Output = anyhow::Result<()>>>> + Send>>,
     to_drop: Vec<Box<dyn Any>>,
 }
 
@@ -60,9 +69,7 @@ impl<S> TeachCore<S> {
 
     pub fn add_db_reset_config(&mut self, entity: impl IntoTableRef + EntityTrait) {
         let mut drop = Table::drop();
-        drop
-            .table(entity)
-            .if_exists();
+        drop.table(entity).if_exists();
         let create = self.schema.create_table_from_entity(entity);
         self.reset_db.push((drop, create));
     }
@@ -88,7 +95,7 @@ impl<S> TeachCore<S> {
     }
 
     pub fn add_on_serve<Fut>(&mut self, f: impl FnOnce() -> Fut + Send + 'static)
-    where 
+    where
         Fut: Future<Output = anyhow::Result<()>> + 'static,
     {
         self.on_serve.push(Box::new(|| Box::pin(f())));
@@ -102,7 +109,7 @@ impl<S> TeachCore<S> {
         let manager = SchemaManager::new(get_db());
         let builder = get_db().get_database_backend();
 
-        for(drop, create) in self.reset_db {
+        for (drop, create) in self.reset_db {
             manager.drop_table(drop).await?;
             get_db().execute(builder.build(&create)).await?;
         }
@@ -201,7 +208,7 @@ pub enum Command {
         username: String,
         #[arg(value_parser = clap::value_parser!(i32).range(0..))]
         user_id: i32,
-        permissions: Vec<users::admins::permissions::Permission>
+        permissions: Vec<users::admins::permissions::Permission>,
     },
     Run,
     ResetDB,
@@ -230,8 +237,14 @@ where
         .init();
     init_db(&config).await?;
     match command {
-        Command::CreateAdmin { username, user_id, permissions } => {
-            return create_admin(username, user_id.try_into().unwrap(), permissions).await.map(|()| ExitCode::SUCCESS);
+        Command::CreateAdmin {
+            username,
+            user_id,
+            permissions,
+        } => {
+            return create_admin(username, user_id.try_into().unwrap(), permissions)
+                .await
+                .map(|()| ExitCode::SUCCESS);
         }
         Command::Run => {}
         Command::ResetDB => {}
@@ -253,17 +266,20 @@ where
     let core = users::instructors::add_to_core(core);
     let core = siblings::add_to_core(core)?;
     let mut core = f(core).await?;
-    let info= std::mem::take(&mut core.info);
+    let info = std::mem::take(&mut core.info);
     let info = serde_json::to_string(&info).unwrap();
     let info: &_ = Box::leak(info.into_boxed_str());
-    core.router = core.router.route("/info", get(move || 
-        std::future::ready(
-            Response::builder()
-                .header("Content-Type", "application/json")
-                .body(Body::from(info))
-                .unwrap()
-        )
-    ));
+    core.router = core.router.route(
+        "/info",
+        get(move || {
+            std::future::ready(
+                Response::builder()
+                    .header("Content-Type", "application/json")
+                    .body(Body::from(info))
+                    .unwrap(),
+            )
+        }),
+    );
 
     match command {
         Command::CreateAdmin { .. } => unreachable!(),
@@ -273,14 +289,17 @@ where
 }
 
 #[diagnostic::on_unimplemented(
-    message = "`{Self}` is not a function pointer that accepts a `TeachCore` and returns a future which resolves to `anyhow::Result<TeachCore>`",
+    message = "`{Self}` is not a function pointer that accepts a `TeachCore` and returns a future which resolves to `anyhow::Result<TeachCore>`"
 )]
 pub trait AddToCore<S> {
-    fn call(self, core: TeachCore<S>) -> impl std::future::Future<Output = anyhow::Result<TeachCore<S>>>;
+    fn call(
+        self,
+        core: TeachCore<S>,
+    ) -> impl std::future::Future<Output = anyhow::Result<TeachCore<S>>>;
 }
 
 impl<Fut, S> AddToCore<S> for fn(TeachCore<S>) -> Fut
-where 
+where
     Fut: Future<Output = anyhow::Result<TeachCore<S>>>,
 {
     async fn call(self, core: TeachCore<S>) -> anyhow::Result<TeachCore<S>> {

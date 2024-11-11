@@ -145,7 +145,10 @@ pub fn build_at_path(path: &Path) -> anyhow::Result<ExitCode> {
             "\nfn main() -> anyhow::Result<std::process::ExitCode> {{"
         )?;
         writeln!(file, "\tinit_core(|mut core| async move {{")?;
-        writeln!(file, "\t\tcore.add_info(\"version\", env!(\"CARGO_PKG_VERSION\"));")?;
+        writeln!(
+            file,
+            "\t\tcore.add_info(\"version\", env!(\"CARGO_PKG_VERSION\"));"
+        )?;
 
         for (name, _) in &integrations {
             let name = name.replace("-", "_");
